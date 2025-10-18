@@ -2,18 +2,27 @@ package Main;
 
 import object.OBJ_Heart;
 import object.SuperObject;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import javax.imageio.ImageIO;
-import javax.swing.*;
+import javax.net.ssl.HttpsURLConnection;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.MalformedURLException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class UI {
     GamePanel qp;
@@ -32,9 +41,11 @@ public class UI {
     public String currentDialogue = "";
     public int commandNum = 0;
     public int titleScreenState = 0; //0: first screen 1:second screen
-    public static List<TrackInfo> trackInfos;
-    
-    public UI(GamePanel qp){
+
+    private static final String CLIENT_ID = "122ea05192a3454099e15dcec1472267";
+    private static final String CLIENT_SECRET = "105a6fea566e4c37997cb2b9d21c930c";
+    List<TrackInfo> trackInfos = new ArrayList<>();
+    public UI(GamePanel qp) throws Exception {
         this.qp = qp;
 
         try {
@@ -53,6 +64,9 @@ public class UI {
         heart_full = heart.image;
         heart_half = heart.image2;
         heart_blank = heart.image3;
+        String accessToken = getAccessToken(CLIENT_ID, CLIENT_SECRET);
+        System.out.println("Access Token: " + accessToken);
+        getTopChiptuneTrackInfos(accessToken);
     }
 
     public void showMessage(String text){
@@ -114,6 +128,81 @@ public class UI {
             x += qp.tileSize;
         }
 
+    }
+    public static String getAccessToken(String clientId, String clientSecret) throws Exception {
+        String url = "https://accounts.spotify.com/api/token";
+        String authString = clientId + ":" + clientSecret;
+        String encodedAuth = Base64.getEncoder().encodeToString(authString.getBytes(StandardCharsets.UTF_8));
+
+        URL obj = new URL(url);
+        HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+
+        con.setRequestMethod("POST");
+        con.setDoOutput(true);
+
+        con.setRequestProperty("Authorization", "Basic " + encodedAuth);
+        con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+
+        String urlParameters = "grant_type=client_credentials";
+        con.getOutputStream().write(urlParameters.getBytes(StandardCharsets.UTF_8));
+
+        int responseCode = con.getResponseCode();
+        if (responseCode == HttpsURLConnection.HTTP_OK) {
+            BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+            String inputLine;
+            StringBuilder response = new StringBuilder();
+
+            while ((inputLine = in.readLine()) != null) {
+                response.append(inputLine);
+            }
+            in.close();
+
+            JSONObject jsonResponse = new JSONObject(response.toString());
+            return jsonResponse.getString("access_token");
+        } else {
+            throw new Exception("Failed to get access token: HTTP error code: " + responseCode);
+        }
+    }
+
+    // Metodă pentru obținerea top 5 melodii chiptune după popularitate
+    public void getTopChiptuneTrackInfos(String accessToken) throws Exception {
+        String query = "genre:chiptune";
+        int maxOffset = 1000; // Opțional, pentru shuffle
+        int offset = new Random().nextInt(maxOffset);
+
+        String url = "https://api.spotify.com/v1/search?q=" + query +
+                "&type=track&limit=50&offset=" + offset;
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + accessToken)
+                .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() == 200) {
+            JSONObject jsonResponse = new JSONObject(response.body());
+            JSONArray tracks = jsonResponse.getJSONObject("tracks").getJSONArray("items");
+
+            List<JSONObject> trackList = new ArrayList<>();
+            for (int i = 0; i < tracks.length(); i++) {
+                trackList.add(tracks.getJSONObject(i));
+            }
+
+            Collections.shuffle(trackList);
+            trackList = trackList.stream().limit(5).collect(Collectors.toList());
+
+            for (JSONObject track : trackList) {
+                String name = track.getString("name");
+                int popularity = track.getInt("popularity");
+                String artist = track.getJSONArray("artists").getJSONObject(0).getString("name");
+                String spotifyUrl = track.getJSONObject("external_urls").getString("spotify");
+                JSONArray images = track.getJSONObject("album").getJSONArray("images");
+                String imageUrl = !images.isEmpty() ? images.getJSONObject(0).getString("url") : "No image";
+                this.trackInfos.add(new TrackInfo(name, popularity, artist, spotifyUrl, imageUrl));
+            }
+        }
     }
 
     public void drawTitleScreen() {
@@ -255,57 +344,49 @@ public class UI {
                 g2.drawString(">", x-qp.tileSize, y);
             }
         }
-        else if (titleScreenState == 3) {
+        else  if (titleScreenState == 3) {
             g2.setColor(Color.white);
             g2.setFont(g2.getFont().deriveFont(42F));
-            String text = "Spotify Playlist";
-            int x = getXforCenteredText(text);
-            int y = qp.tileSize + qp.tileSize / 2;
-            g2.drawString(text, x, y);
+            String title = "Spotify Playlist";
+            int titleX = getXforCenteredText(title);
+            int titleY = qp.tileSize + qp.tileSize / 2;
+            g2.drawString(title, titleX, titleY);
 
-            text = "Melodia 1";
-            x = getXforCenteredText(text);
-            y += qp.tileSize*2;
-            g2.drawString(text, x - 3*qp.tileSize, y);
-            if(commandNum == 0){
-                g2.drawString(">", x-4*qp.tileSize, y);
+            int imgX = 50; // Left margin for images
+            int imgWidth = 70;
+            int imgHeight = 70;
+            int imgGapY = 10; // Space between images
+            int topY = titleY + qp.tileSize;
+
+            for (int i = 0; i < trackInfos.size() && i < 5; i++) {
+                TrackInfo track = trackInfos.get(i);
+                int currImgY = topY + i * (imgHeight + imgGapY);
+                try {
+                    URL imageUrl = new URL(track.getImageUrl());
+                    BufferedImage image = ImageIO.read(imageUrl);
+                    g2.drawImage(image, imgX, currImgY, imgWidth, imgHeight, null);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+                // Draw track name to the right of the image
+                int textX = imgX + imgWidth + 30;
+                int textY = currImgY + imgHeight / 2 + g2.getFont().getSize() / 2;
+                g2.drawString(track.getName(), textX, textY);
+
+                // Draw '>' selector if needed
+                if (commandNum == i) {
+                    g2.drawString(">", textX - 30, textY); // 30 is marker offset, can adjust
+                }
             }
 
-            text = "Melodia 2";
-            x = getXforCenteredText(text);
-            y += qp.tileSize + qp.tileSize / 2;
-            g2.drawString(text, x - 3*qp.tileSize, y);
-            if(commandNum == 1){
-                g2.drawString(">", x-4*qp.tileSize, y);
-            }
-
-            text = "Melodia 3";
-            x = getXforCenteredText(text);
-            y += qp.tileSize + qp.tileSize / 2;
-            g2.drawString(text, x - 3*qp.tileSize, y);
-            if(commandNum == 2){
-                g2.drawString(">", x-4*qp.tileSize, y);
-            }
-            text = "Melodia 4";
-            x = getXforCenteredText(text);
-            y += qp.tileSize + qp.tileSize / 2;
-            g2.drawString(text, x - 3*qp.tileSize, y);
-            if(commandNum == 3){
-                g2.drawString(">", x-4*qp.tileSize, y);
-            }
-            text = "Melodia 5";
-            x = getXforCenteredText(text);
-            y += qp.tileSize + qp.tileSize / 2;
-            g2.drawString(text, x - 3*qp.tileSize, y);
-            if(commandNum == 4){
-                g2.drawString(">", x-4*qp.tileSize, y);
-            }
-            text = "BACK";
-            x = getXforCenteredText(text);
-            y += qp.tileSize*2;
-            g2.drawString(text, x, y);
-            if(commandNum == 5){
-                g2.drawString(">", x-qp.tileSize, y);
+            // Draw BACK option below the last track
+            String backText = "BACK";
+            int backX = 7*qp.tileSize;
+            int backY = topY + (imgHeight + imgGapY) * 5 + 20;
+            g2.drawString(backText, backX, backY);
+            if (commandNum == 5) {
+                g2.drawString(">", backX - 30, backY);
             }
         }
     }

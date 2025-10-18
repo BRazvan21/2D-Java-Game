@@ -21,4 +21,15 @@ public class TrackInfo {
     public String getArtist() { return artist; }
     public String getSpotifyUrl() { return spotifyUrl; }
     public String getImageUrl() { return imageUrl; }
+
+    @Override
+    public String toString() {
+        return "TrackInfo{" +
+                "name='" + name + '\'' +
+                ", popularity=" + popularity +
+                ", artist='" + artist + '\'' +
+                ", spotifyUrl='" + spotifyUrl + '\'' +
+                ", imageUrl='" + imageUrl + '\'' +
+                '}';
+    }
 }

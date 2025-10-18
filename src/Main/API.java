@@ -68,11 +68,6 @@ public class API {
         }
     }
 
-    public class ImageStorage {
-
-        public static String[] imageUrls; // accesibil din orice clasă
-    }
-
     // Metodă pentru obținerea top 5 melodii chiptune după popularitate
     public static List<TrackInfo> getTopChiptuneTrackInfos(String accessToken) throws Exception {
         String query = "genre:chiptune";
@@ -104,15 +99,7 @@ public class API {
             trackList = trackList.stream().limit(5).collect(Collectors.toList());
 
             for (JSONObject track : trackList) {
-                JSONArray imagess = track.getJSONObject("album").optJSONArray("images");
 
-                // vector temporar
-                String[] urls = new String[imagess != null ? imagess.length() : 0];
-
-                for (int j = 0; j < urls.length; j++) {
-                    urls[j] = imagess.getJSONObject(j).getString("url");
-                }
-                ImageStorage.imageUrls = urls;
                 String name = track.getString("name");
                 int popularity = track.getInt("popularity");
                 String artist = track.getJSONArray("artists").getJSONObject(0).getString("name");
